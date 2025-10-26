@@ -19,7 +19,7 @@ def cmd_info(args):
 def cmd_introduce(args):
     df = load_csv(args.csv)
     df2 = introduce_inconsistency(df, args.decision, k=args.k, new_value=args.new_value)
-    out = args.out or "with_inconsistency.csv"
+    out = args.out or "data/with_inconsistency.csv"
     df2.to_csv(out, index=False)
     print(f"🧪 Wprowadzono niespójność → zapisano: {out}")
 
