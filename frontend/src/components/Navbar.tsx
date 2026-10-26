@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 const links = [
   { to: '/', label: 'Datasets', end: true },
   { to: '/experiments', label: 'Remove inconsistency' },
-  // { to: '/results', label: 'Build decision tree' },
+  { to: '/results', label: 'Build decision tree' },
 ]
 
 export default function Navbar() {
