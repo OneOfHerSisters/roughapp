@@ -1,0 +1,42 @@
+@startuml activity-experiment
+|Użytkownik|
+start
+:Wybierz zbiór danych;
+:Wybierz strategie\n(MCD, QR, Splitting, MVD, GD);
+:Opcjonalnie ustaw random_state;
+:Kliknij „Run experiment”;
+
+|Frontend (React)|
+:Wyślij POST /api/experiments\nz tokenem JWT;
+
+|Backend (FastAPI)|
+if (Użytkownik uwierzytelniony?) then (tak)
+else (nie)
+  :Zwróć HTTP 401;
+  |Użytkownik|
+  :Wyświetl komunikat\n„Wymagane logowanie”;
+  stop
+endif
+
+:Wczytaj CSV ze ścieżki zbioru;
+:Oblicz metryki PRZED\n(γ, α, statystyki drzewa);
+
+repeat
+  :Uruchom wybraną strategię rozwiązania;
+  :Oblicz metryki PO;
+  :Zapisz wynik do pliku CSV\n(data/experiment_results/{id}/);
+repeat while (Pozostały strategie?) is (tak)
+-> nie;
+
+:Zapisz rekord Experiment\ni ExperimentResult w PostgreSQL;
+:Zwróć wynik JSON;
+
+|Frontend (React)|
+:Przekieruj do /experiments/{id};
+:Wyświetl tabelę metryk\ni wykresy przed/po;
+
+|Użytkownik|
+:Przegląda wyniki eksperymentu;
+stop
+
+@enduml

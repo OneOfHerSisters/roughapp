@@ -1,0 +1,61 @@
+@startuml use-case-roughapp
+left to right direction
+skinparam actorStyle awesome
+skinparam usecaseFontSize 11
+skinparam packageStyle rectangle
+
+actor "User" as User
+
+rectangle roughapp {
+
+  package "Account" {
+    usecase "Register account" as UC_reg
+    usecase "Log in" as UC_login
+    usecase "Adopt guest\nsession data" as UC_adopt
+  }
+
+  package "Datasets" {
+    usecase "Browse and preview\ndatasets" as UC_browse
+    usecase "Upload dataset" as UC_upload
+    usecase "Select decision\nattribute" as UC_dec
+    usecase "Analyze\ninconsistency" as UC_analyze
+    usecase "Rank attribute\nimportance" as UC_imp
+    usecase "Introduce\ninconsistency" as UC_intro
+    usecase "Complete\nmissing values" as UC_complete
+    usecase "Delete own datasets\nand experiments" as UC_manage
+  }
+
+  package "Experiments" {
+    usecase "Run experiment" as UC_run
+    usecase "Apply resolution\nstrategies" as UC_apply
+    usecase "Configure strategy\nparameters" as UC_params
+    usecase "View experiment\nresults" as UC_view
+    usecase "Generate\ndecision trees" as UC_gentrees
+    usecase "Compare experiments" as UC_compare
+    usecase "Download results\nas CSV" as UC_export
+  }
+}
+
+User --> UC_reg
+User --> UC_login
+User --> UC_browse
+User --> UC_upload
+User --> UC_analyze
+User --> UC_imp
+User --> UC_intro
+User --> UC_complete
+User --> UC_manage
+User --> UC_run
+User --> UC_view
+User --> UC_compare
+
+UC_upload ..> UC_dec : <<include>>
+UC_run ..> UC_apply : <<include>>
+
+UC_adopt ..> UC_reg : <<extend>>
+UC_adopt ..> UC_login : <<extend>>
+UC_params ..> UC_run : <<extend>>
+UC_gentrees ..> UC_view : <<extend>>
+UC_export ..> UC_view : <<extend>>
+
+@enduml

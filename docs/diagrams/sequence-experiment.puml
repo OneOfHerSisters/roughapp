@@ -1,0 +1,50 @@
+@startuml sequence-experiment
+skinparam sequenceMessageAlign center
+
+actor User
+participant "React client" as SPA
+participant "API router\n(experiments.py)" as API
+participant "experiment_runner" as Runner
+participant "resolution\nstrategies" as Strat
+participant "tree_builder" as Tree
+database "Database" as DB
+collections "File system\n(CSV files)" as FS
+
+User -> SPA : select dataset, strategies,\nparameters; start experiment
+SPA -> API : POST /api/experiments\n(JWT; dataset_id, strategies,\ntie policies, seed)
+
+API -> DB : load dataset metadata,\ncheck ownership
+API -> DB : create Experiment record;\nflush (get id)
+API -> FS : read original CSV\n(_read_csv)
+API -> Runner : run_experiment(df, parameters)
+
+loop for each selected strategy
+  Runner -> Strat : run(df, decision_col, ...)
+  Strat --> Runner : resolved table
+  Runner -> Runner : compute γ, α,\nrows removed, details
+  Runner -> FS : save result CSV
+end
+
+Runner --> API : per-strategy metrics\nand file paths
+
+API -> Tree : build tree on original dataset
+Tree --> API : depth_before, avg_depth_before,\nnodes_before (once)
+
+loop for each result
+  API -> FS : read resolved CSV
+  API -> Tree : build tree on resolved CSV
+  Tree --> API : depth_after, avg_depth_after,\nnodes_after
+end
+
+API -> DB : store ExperimentResult rows\nwith tree statistics; commit
+API --> SPA : experiment with results (JSON:\nmetrics, details; no full trees)
+SPA --> User : navigate to /experiments/{id}
+
+note over SPA, Tree
+  Optional later: user opens "Decision trees"
+  SPA -> API : GET .../results/{strategy}/tree
+  API -> Tree : build full before/after trees
+  API --> SPA : tree JSON for visualization
+end note
+
+@enduml

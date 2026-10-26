@@ -1,0 +1,35 @@
+@startuml activity-introduce
+|Użytkownik|
+start
+:Wybierz zbiór źródłowy;
+:Wybierz metodę wprowadzenia niespójności;
+
+|Backend (FastAPI)|
+if (Użytkownik uwierzytelniony?) then (tak)
+else (nie)
+  :Zwróć HTTP 401;
+  stop
+endif
+
+:Wczytaj CSV zbioru źródłowego;
+
+if (Metoda?) then (until_quality)
+  :Redukuj γ do zadanego target_γ\n(introduce_until_quality);
+elseif (duplicate_flip) then
+  :Odwróć decyzję w k\nzduplikowanych wierszach;
+else (drop_attributes)
+  :Usuń wybrane atrybuty warunkowe;
+endif
+
+:Oblicz γ po transformacji;
+:Zapisz nowy plik CSV\nw data/uploads/;
+:Utwórz rekord Dataset\n(source_id → zbiór źródłowy,\n gamma_actual = γ);
+
+|Frontend (React)|
+:Odśwież listę zbiorów danych;
+
+|Użytkownik|
+:Widzi nowy pochodny zbiór danych;
+stop
+
+@enduml

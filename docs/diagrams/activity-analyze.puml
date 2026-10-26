@@ -1,0 +1,30 @@
+@startuml activity-analyze
+|Użytkownik|
+start
+:Wybierz zbiór danych;
+:Kliknij „Analyze”;
+
+|Backend (FastAPI)|
+:Wczytaj plik CSV;
+:Określ kolumnę decyzyjną\n(ostatnia kolumna, jeśli nie podano);
+:Pogrupuj wiersze\npo atrybutach warunkowych;
+
+partition "Dla każdej klasy równoważności" {
+  if (Więcej niż jedna\ndecyzja w klasie?) then (tak)
+    :Oznacz klasę jako niespójną;
+  else (nie)
+    :Oznacz klasę jako spójną;
+  endif
+}
+
+:Oblicz metryki:\nγ (jakość), α (dokładność),\nρ, L, U, boundary per decyzja;
+:Zwróć raport JSON;
+
+|Frontend (React)|
+:Wyświetl statystyki niespójności\nw interfejsie użytkownika;
+
+|Użytkownik|
+:Analizuje wyniki;
+stop
+
+@enduml

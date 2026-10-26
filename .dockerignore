@@ -1,0 +1,31 @@
+# VCS / IDE
+.git
+.idea
+.vscode
+
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+
+# Local secrets
+.env
+
+# Runtime data must not enter the image; the builtin modified_*.csv seed files
+# are kept so the image can seed the database on first boot. Uploads and
+# uploads and tree artifacts are persisted via mounted volumes (docker-compose.yml).
+data/roughapp.db
+data/uploads/
+data/tree_artifacts/
+data/experiment_results_batch.csv
+data/batch_results/
+
+# Frontend (built separately in its own image)
+frontend/node_modules
+frontend/dist
+
+# Docs / misc
+*.md
+tests/

@@ -1,0 +1,204 @@
+\chapter{System Design}
+
+This chapter covers the system's requirements, architecture, and data model. The user interface and the implementation of individual layers are described in the chapters that follow.
+
+The system, \texttt{roughapp}, is a web application for analyzing and removing inconsistency in decision tables. A user loads a dataset in CSV format, computes the quality of classification $\gamma$ and the accuracy of approximation $\alpha$, looks at the conflicting equivalence classes, and applies one of the five resolution strategies from the theoretical chapter: MCD, Qualitative Removal, Splitting, MVD, or GD. An experiment runs several strategies on the same table and compares their outcomes, down to the complexity of decision trees built before and after each method. When a table is too clean to be interesting, the system can also introduce inconsistency on purpose, and it can fill in or remove missing values.
+
+\section{Functional Requirements}
+
+The functions the system has to provide are listed below. Each one is numbered so that later chapters can refer back to it.
+
+\begin{description}
+
+\item[FR-1 (Accounts and anonymous work).]
+A person can create an account with an e-mail address and a password and later log in with the same credentials. The system can also be used without an account: a visitor works within a temporary session that expires after a fixed time, taking everything created in it along. If the visitor registers or logs in while such a session is still open, its data is moved into the account.
+
+\item[FR-2 (Ownership-based access).]
+Built-in datasets are public. Datasets, experiments, and decision trees created by a user or a temporary session are visible only to their owner.
+
+\item[FR-3 (Dataset management).]
+A user uploads a decision table as a CSV file and chooses which column is the decision attribute; the system records the table's name, its dimensions, and the chosen attribute. Uploaded and built-in datasets can be listed and previewed page by page. The built-in datasets let the system be tried without uploading anything first.
+
+\item[FR-4 (Inconsistency analysis).]
+For a chosen dataset the system computes the equivalence classes, the lower and upper approximations, the boundary region, $\alpha$, and $\gamma$, and lists the conflicting classes with example objects. It can also rank the conditional attributes by importance, measured as the drop in $\gamma$ that removing each attribute would cause.
+
+\item[FR-5 (Introducing inconsistency).]
+An inconsistent table can be derived from a consistent one in three ways: by duplicating objects with a flipped decision, by removing selected attributes, or by repeating the duplication until $\gamma$ reaches a target. The result becomes a new dataset linked to its source.
+
+\item[FR-6 (Handling missing values).]
+Missing values are detected and counted per column. The user can drop the incomplete rows or fill the gaps --- with the most common value for nominal attributes and the mean for numeric ones, taken over the whole table or within each decision class. The completed table becomes a new dataset linked to its source.
+
+\item[FR-7 (Running experiments).]
+One or more strategies are applied to a dataset in a single experiment, with the tie-breaking policies, the subtable limit, and the random seed all configurable. For every strategy the system records $\gamma$, $\alpha$, the number of rows kept, the running time, and details of how each conflict was handled. The input dataset is never touched, and every resolved table is stored as a dataset of its own, ready to be analysed or resolved again.
+
+\item[FR-8 (Decision tree comparison).]
+A decision tree can be built for any dataset, whether it is an original table or a resolved one, reporting depth, average leaf depth, and node count. A comparison view gathers the trees built so far and lines up their measures side by side, no matter where each table came from.
+
+\item[FR-9 (Export).]
+Any resolved table can be downloaded as a CSV file and taken to an external tool for further work.
+
+\end{description}
+
+Figure~\ref{fig:usecase} summarizes these requirements. A single actor, the user, covers both anonymous work in a temporary session and work after registration or login (FR-1, FR-2). Guest data can be adopted into an account when the user registers or logs in.
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/use_case.png}
+  \captionof{figure}{Use case diagram of the system.}
+  \label{fig:usecase}
+\end{center}
+
+\section{Non-Functional Requirements}
+
+\begin{description}
+
+\item[NFR-1 (Reproducibility).]
+Every operation with a random component takes an explicit seed, and all parameters of an experiment are stored with its record. Running the same operation on the same data with the same seed gives an identical result.
+
+\item[NFR-2 (Correctness and testability).]
+The rough-set measures and all five strategies have to reproduce the worked example from the theoretical chapter exactly. An automated test suite checks this and also covers edge cases such as ties and tables with no conflicts. The analytical code and the access-control rules can be tested on their own, without starting the web server or the database.
+
+\item[NFR-3 (Portability and deployment).]
+The system runs from one code base in two configurations: locally on an embedded database, and as a containerized stack on a client--server database. Moving between them needs no code changes, and the whole stack --- database, backend, frontend --- comes up with a single command.
+
+\item[NFR-4 (Extensibility).]
+Adding a resolution or introduction strategy means writing one module and registering it; nothing in the existing strategies or in the API has to change.
+
+\item[NFR-5 (Security).]
+Passwords are never stored or logged in plain text. Every operation on a private resource checks ownership. In the production deployment only the web frontend is reachable from outside.
+
+\item[NFR-6 (Interoperability).]
+Input and output are plain CSV, so data can be prepared beforehand and processed afterwards with external tools.
+
+\item[NFR-7 (Usability).]
+The core analytical functions work without an account, and results appear in the interface without full page reloads.
+
+\item[NFR-8 (Responsiveness under load).]
+Running an experiment, building trees, or computing attribute importance can take minutes on a larger dataset. While one of these is running, the server has to keep answering other requests without a noticeable delay.
+
+\end{description}
+
+\section{System Architecture}
+
+The system is a three-tier client--server application: a browser frontend, an application server, and a relational database. The frontend is a single-page application\footnote{Single-Page Application --- a web application loaded once into the browser; later views are rendered by client-side code that fetches only data from the server, without full page reloads.} that communicates with the server only through a JSON REST API\footnote{Representational State Transfer Application Programming Interface --- a style of programming interface in which the client works on resources through standard HTTP methods (GET, POST, DELETE, \ldots), usually exchanging data as JSON.}; the server owns all the data and does all the computation. In production only the frontend is reachable from outside, while the API and the database sit on an internal network.
+
+Inside the application server the code is split into three layers with a strict dependency direction. The presentation layer (\texttt{api/}) is the only part that knows about HTTP. Its routers read a request, call one method of a business service, and shape the response, and a single place maps domain errors to HTTP status codes. The business layer (\texttt{business/}) is the application itself: services that carry out the user scenarios and own the transaction boundaries, an access policy that is the one place deciding who may see or change a resource (FR-2), and the algorithms. Each algorithm is a plain function over a pandas DataFrame, wrapped in a strategy class\footnote{An application of the Strategy design pattern: interchangeable algorithms hidden behind a common interface and picked by name at run time.} with a common interface and registered in an explicit registry. The experiment runner drives the chosen strategies through that interface, so a new method is one class and one line of registration (NFR-4). Tree builders and rule extractors are organized the same way, and the actor context already has a slot for team memberships, so the system grows by adding classes behind the existing interfaces rather than by editing what is there. The data access layer (\texttt{db/}) hides both storage technologies: the repositories hold every database query, and one file-storage object is the only code that builds file paths.
+
+Underneath all three layers, \texttt{core/} holds the rough-set primitives as plain functions: equivalence classes, the approximations, the measures $\alpha$ and $\gamma$, missing-value detection. It imports neither the web framework nor the database. That is what lets the mathematics be tested on its own (NFR-2) and reused outside the web application --- the same functions are called by the strategy classes, by the test suite, and by the offline batch script used for the experimental part of this thesis.
+
+Structured data lives in a relational database: PostgreSQL in the containerized deployment, SQLite locally (NFR-3). The decision tables themselves stay as CSV files on disk, with the record identifier put in front of each file name so that two uploads with the same name cannot overwrite each other. This keeps the bulky tabular data out of the database and lets the computational code read the files directly with pandas. The price is that a database transaction cannot undo a file write, so the services write the file first and commit last: if the commit fails, the transaction is rolled back and the file just written is deleted, and files are removed only after a commit has gone through. The database row is the source of truth.
+
+The responsiveness requirement (NFR-8) shapes one more decision. The heavy computations run in worker threads, off the server's request-handling loop, so the server keeps answering other requests while an experiment is running. How this works is described together with the server layer in the technical documentation chapter.
+
+\section{Data Model}
+
+The database is created and kept current by Alembic migrations, applied automatically when the server starts; SQLite and PostgreSQL are built from the same migrations and end up with the same schema. There are enough relationships between the tables that showing them all in one figure would be hard to read, so the schema is presented in five themed areas --- users and ownership, dataset management, experiment configuration, experiment execution, and decision-tree generation --- with the reference tables shown on their own at the end. Each area comes in two views: a logical model, which shows the entities and how they relate without any database detail, and a relational model, which adds the columns, keys, and constraints of the real implementation.
+
+\subsection{Users and ownership}
+
+Data can belong to one of two kinds of actor: a registered \emph{user}, or an anonymous \emph{guest\_session}, identified by a hashed cookie token and given a fixed lifetime. A dataset, an experiment, and a tree run each carry a \texttt{user\_id} and a \texttt{guest\_session\_id}, but the rule on those two columns is not the same everywhere. A dataset or a tree run may have neither of them set --- for a dataset that is exactly what marks it as one of the public built-in tables --- while an experiment must always name one owner, and only one.
+
+An experiment keeps its own owner instead of borrowing it from its dataset, and this is on purpose. Experiments are usually run on the public built-in tables, which belong to nobody; an experiment without an owner of its own could be neither shown to the person who ran it nor hidden from everyone else. Figures~\ref{fig:log_users} and~\ref{fig:erd_users} show this area.
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/users_logical.png}
+  \captionof{figure}{Users and ownership --- logical model.}
+  \label{fig:log_users}
+\end{center}
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/users_relational.png}
+  \captionof{figure}{Users and ownership --- relational model.}
+  \label{fig:erd_users}
+\end{center}
+
+\subsection{Dataset management}
+
+A \emph{dataset} is one row per decision table: its name, the path to the CSV file, its dimensions, the chosen decision attribute, and the measured $\gamma$ and $\alpha$. Where a dataset came from is kept in a separate table, \emph{dataset\_provenance}, whose \texttt{kind} is one of \texttt{upload}, \texttt{derived}, or \texttt{experiment\_output}, and whose \texttt{source\_dataset\_id} points back at the table it was made from.
+
+Keeping the origin apart from the dataset itself means a derived or generated table is a full dataset like any other: it can be previewed, analysed, resolved again, or turned into a tree, with no special handling. The link to the source is declared ON~DELETE~SET~NULL, so a derived table outlives the table it came from and only loses the note of where it came from. Figures~\ref{fig:log_datasets} and~\ref{fig:erd_datasets} show this area.
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/datasets_logical.png}
+  \captionof{figure}{Dataset management --- logical model.}
+  \label{fig:log_datasets}
+\end{center}
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/datasets_relational.png}
+  \captionof{figure}{Dataset management --- relational model.}
+  \label{fig:erd_datasets}
+\end{center}
+
+\subsection{Experiment configuration}
+
+An \emph{experiment} holds only the parameters of a run: the input dataset, the random seed, the maximal number of subtables for splitting, and the two tie-breaking policies, reached through foreign keys into the lookup tables. It also carries its own owner, for the reason given above. It stores no measurements of its own: the input table's metrics are read from the dataset record, and the outcomes are kept with the results. Figures~\ref{fig:log_expconfig} and~\ref{fig:erd_expconfig} show this area.
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/experiment_config_logical.png}
+  \captionof{figure}{Experiment configuration --- logical model.}
+  \label{fig:log_expconfig}
+\end{center}
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/experiment_config_relational.png}
+  \captionof{figure}{Experiment configuration --- relational model.}
+  \label{fig:erd_expconfig}
+\end{center}
+
+\subsection{Experiment execution and results}
+
+Running an experiment produces one \emph{experiment\_result} per strategy, holding the strategy reference, the running time, and a JSON column \texttt{details} with per-class explanations of how the conflicts were handled. The numeric outcomes go into \emph{experiment\_metrics} as name--value rows (\texttt{gamma}, \texttt{alpha}, \texttt{rows}, and strategy-specific counts), so introducing a new metric never means adding a column.
+
+The resolved tables a strategy produces are stored as datasets and tied to the result through \emph{experiment\_result\_outputs}; most strategies produce a single table, while splitting produces several, kept in order by \texttt{sort\_order}. Since these outputs are ordinary datasets, a resolved table can go straight into another experiment or into a decision tree with nothing in between. Figures~\ref{fig:log_expresults} and~\ref{fig:erd_expresults} show this area.
+
+\begin{center}
+  \includegraphics[width=0.95\textwidth]{figures/experiment_results_logical.png}
+  \captionof{figure}{Experiment execution and results --- logical model.}
+  \label{fig:log_expresults}
+\end{center}
+
+\begin{center}
+  \includegraphics[width=0.95\textwidth]{figures/experiment_results_relational.png}
+  \captionof{figure}{Experiment execution and results --- relational model.}
+  \label{fig:erd_expresults}
+\end{center}
+
+\subsection{Decision-tree generation}
+
+A \emph{tree\_run} records one built decision tree: the dataset it was built on, the algorithm used, the build parameters together with their hash, and the path to the stored tree. Its measures --- depth, average leaf depth, node count --- go into \emph{tree\_metrics} in the same name--value form as the experiment metrics. The parameter hash lets the system notice that an identical tree has already been built and reuse it instead of building it again (NFR-1).
+
+A tree run always points at a dataset, never at a strategy result directly. Since the resolved tables are themselves datasets, a ``before'' and an ``after'' tree are just the trees of two datasets, and the same table serves both the experiment view and the standalone comparison. Figures~\ref{fig:log_trees} and~\ref{fig:erd_trees} show this area.
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/trees_logical.png}
+  \captionof{figure}{Decision-tree generation --- logical model.}
+  \label{fig:log_trees}
+\end{center}
+
+\begin{center}
+  \includegraphics[width=0.9\textwidth]{figures/trees_relational.png}
+  \captionof{figure}{Decision-tree generation --- relational model.}
+  \label{fig:erd_trees}
+\end{center}
+
+\subsection{Reference tables}
+
+Strategy, policy, and algorithm names are not stored as free text. Four lookup tables hold the allowed values: \emph{strategies} (the five resolution methods), \emph{mcd\_tie\_policies} and \emph{qr\_tie\_policies} (the tie-breaking policies of MCD and of qualitative removal), and \emph{tree\_algorithms} (currently only CART). Each row has a unique \texttt{name} and a \texttt{description}, and the tables that use them refer through foreign keys. The lists are filled in when the server starts, so an allowed value is written down once rather than repeated as free text on every row. Figure~\ref{fig:erd_reference} shows them in relational form only; as plain reference data they add nothing at the logical level.
+
+\begin{center}
+  \includegraphics[width=0.8\textwidth]{figures/reference_tables.png}
+  \captionof{figure}{Reference tables.}
+  \label{fig:erd_reference}
+\end{center}
+
+\subsection{Integrity rules and deletion}
+
+Integrity rests on foreign keys, unique constraints, a few CHECK constraints, and indexes. The unique constraints keep out duplicates: one storage path per owner, one result per strategy within an experiment, one metric name per result and per tree run, one output per position within a result. The CHECK constraints are kept few on purpose. They guard only what is structural and cheap for the database to enforce: that ownership is filled in the way each table allows, and that a guest session expires after it was created. The rest --- that $\gamma$ and $\alpha$ lie in $[0,1]$, that counts and running times are not negative, that a strategy or policy name is one the system knows --- is checked in the API before a row is written, where a bad value is caught with a message the user can read instead of coming back as a raw database error. Keeping these rules in one place, in code, makes them easy to read and to test.
+
+Deletion follows the provenance links in one direction only. A dataset can always be deleted by its owner. The tables derived from it, and the output tables of its experiments, are datasets in their own right and stay behind, with their link to the source cleared; either of them can also be deleted on its own. Only the experiment records that used the dataset as input cannot outlive it, so the interface lists them and removes them together with the dataset once the user confirms. Files and tree artifacts go with the record that owns them, once the database change has committed.
+
+\subsection{Normal form}
+
+The schema satisfies the first three normal forms. Every table has an integer primary key, every column holds a single atomic value, and repeating groups are put in child tables (result outputs, metrics) rather than in lists or numbered columns; this is the first normal form. Because every table has a single-column primary key, a non-key column cannot depend on only part of the key, so partial dependencies cannot arise --- the second normal form. Facts about strategies, policies, and algorithms live in their own lookup tables, and how a dataset was produced lives in \emph{dataset\_provenance} rather than on the dataset row, which removes the transitive dependencies of the third.
+
+Two departures are made on purpose. The JSON \texttt{details} column carries strategy-specific metadata that is always read as a whole and never queried piece by piece, so splitting it into tables would add a table per strategy and a join on every read for nothing. And \texttt{datasets} caches the measured $\gamma$ and $\alpha$ so that a list view does not have to reopen every CSV file; the cache cannot fall out of step, because a dataset file is never changed once it has been written.

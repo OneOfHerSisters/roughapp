@@ -3,3 +3,16 @@ numpy
 fastapi
 uvicorn
 pydantic
+pydantic-settings
+python-multipart
+pytest
+scikit-learn
+sqlalchemy
+alembic
+psycopg[binary]
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
+
+# test client dependency (starlette TestClient)
+httpx

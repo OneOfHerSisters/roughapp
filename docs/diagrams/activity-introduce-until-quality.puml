@@ -1,0 +1,32 @@
+@startuml activity-introduce-until-quality
+title Introduce inconsistency — until target γ (method: until_quality)
+
+note right
+  Other introduction methods:
+  duplicate_flip (fixed k),
+  drop_attributes — see activity-introduce.puml
+end note
+
+|User|
+start
+:Select a dataset;
+:Set target quality γ*\nand random seed;
+:Start introduction;
+
+|System|
+:Compute current γ;
+
+while (γ > γ*) is (yes)
+  :Pick a random row\n(seeded RNG);
+  :Append duplicate with\na different decision;
+  :Recompute γ;
+endwhile (no)
+
+:Save as new dataset\n(linked to original);
+:Record achieved γ;
+
+|User|
+:Review new dataset\n(γ actual ≤ γ*, often slightly lower);
+stop
+
+@enduml

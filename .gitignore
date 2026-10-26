@@ -11,3 +11,17 @@ __pycache__/
 
 # Data
 data/
+
+# Secrets / local env (keep .env.example tracked)
+.env
+!.env.example
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend_legacy.html
+# thesis / tooling byproducts
+*.log
+jdbc/
+/schema*.sql
+/analysis.md

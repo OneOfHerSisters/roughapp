@@ -1,0 +1,61 @@
+@startuml activity-workflow
+title Main workflow — registered user (roughapp)
+
+|User|
+start
+:Log in;
+
+:Select built-in dataset\nor upload CSV;
+
+if (Run inconsistency analysis?) then (yes)
+  |System|
+  :Compute equivalence classes,\napproximations, α and γ;
+  |User|
+else (no)
+endif
+
+if (Missing values present?) then (yes)
+  :Choose completion method\n(remove rows / fill values);
+  |System|
+  :Create completed dataset\nlinked to the original;
+  |User|
+else (no)
+endif
+
+if (γ = 1 and inconsistency\nneeded?) then (yes)
+  note right
+    Skip if dataset is already
+    inconsistent (e.g. Azad benchmarks,
+    derived g0.7 tables).
+  end note
+  :Choose introduction method\nand parameters (seed, target γ);
+  |System|
+  :Create inconsistent dataset\nlinked to the original;
+  |User|
+else (no)
+endif
+
+:Select resolution strategies\nand parameters (tie policies,\nseed);
+:Start experiment;
+
+|System|
+:Apply each selected strategy;
+:Compute γ, α, rows removed\nbefore and after;
+:Build CART trees and\nrecord depth / nodes;
+:Store experiment with parameters\nand result CSV files;
+
+|User|
+:Inspect results\n(metrics, trees, downloads);
+
+if (Compare across experiments?) then (yes)
+  |System|
+  :Aggregate tree statistics\nfrom experiment history;
+  |User|
+  :Review comparison table;
+else (no)
+endif
+
+:Export summary CSV or\nsave resolved table as dataset;
+stop
+
+@enduml

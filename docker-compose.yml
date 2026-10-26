@@ -1,16 +1,41 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-roughapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roughapp}
+      POSTGRES_DB: ${POSTGRES_DB:-roughapp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-roughapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
-    ports:
-      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-roughapp}:${POSTGRES_PASSWORD:-roughapp}@db:5432/${POSTGRES_DB:-roughapp}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      GUEST_CLEANUP_INTERVAL_MINUTES: ${GUEST_CLEANUP_INTERVAL_MINUTES:-60}
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
-      - .:/app
+      # Persist user uploads and tree artifacts across restarts. Mounted at
+      # subpaths so the image's builtin seed CSVs under data/ remain visible.
+      - uploads:/app/data/uploads
+      - tree_artifacts:/app/data/tree_artifacts
 
   frontend:
-    image: node:20-alpine
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
+    build: ./frontend
     ports:
-      - "3000:3000"
-    command: ["sh", "-c", "npm install && npm start"]
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads:
+  tree_artifacts:

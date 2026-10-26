@@ -1,0 +1,355 @@
+\chapter{Practical Implementation of the Project}
+\label{ch:implementation}
+
+% Figures are non-floating (center + \captionof) so they stay in place.
+% Requires in the main preamble: \usepackage{caption}  % or capt-of
+
+This chapter describes how we implemented \texttt{roughapp}. We first summarise
+the system requirements and then explain the architecture and the data model.
+Finally, we outline the technology stack and present the user interface.
+
+The application is a web tool for analysing inconsistency in decision tables and
+for comparing inconsistency-resolution strategies. A user uploads a CSV dataset,
+selects the decision attribute, inspects rough-set measures (in particular
+$\gamma$ and $\alpha$) and conflicting equivalence classes, and then applies one
+or more strategies (MCD, qualitative removal, MVD, GD). Outputs are stored as
+new datasets so they can be analysed again, exported, or used as input for
+further experiments. Decision trees (CART) are built on demand to compare model
+complexity before and after resolution.
+
+\section{Requirements}
+
+\subsection{Functional requirements}
+
+\begin{description}
+
+\item[FR-1 (Accounts and anonymous work).]
+A user can create an account with an e-mail address and a password and log in
+with the same credentials. The system can also be used without an account: a
+visitor works in a temporary session. If the visitor registers or logs in while
+such a session is still active, the session data is transferred into the account.
+
+\item[FR-2 (Ownership-based access).]
+Built-in datasets are public. Datasets, experiments, and decision trees created
+by a registered user or an anonymous session are visible only to their owner.
+
+\item[FR-3 (Dataset management).]
+A user uploads a decision table as a CSV file and selects the decision attribute.
+The system stores the dataset name, dimensions, and the chosen decision attribute.
+Uploaded and built-in datasets can be listed and previewed page by page.
+
+The CSV may include an optional \texttt{type row} immediately below the header,
+containing one marker per column:
+\texttt{c} (categorical), \texttt{l} (logical/binary), \texttt{n} (numeric),
+\texttt{i} (integer), and \texttt{r} (real). If the type row is absent, all
+attributes are treated as categorical. The type row is not stored separately in
+the database: it remains part of the CSV file and is written automatically when
+the system saves derived or resolved tables.
+
+\item[FR-4 (Inconsistency analysis).]
+For a chosen dataset, the system computes equivalence classes, lower and upper
+approximations, the boundary region, $\alpha$ and $\gamma$, and lists conflicting
+classes with example objects. It can also rank condition attributes by importance,
+measured as the drop in $\gamma$ after removing each attribute.
+
+\item[FR-5 (Introducing inconsistency).]
+An inconsistent table can be derived from a consistent one by duplicating objects
+with a flipped decision, removing selected attributes, or repeating duplication
+until $\gamma$ reaches a target. The result becomes a new dataset linked to its
+source.
+
+\item[FR-6 (Handling missing values).]
+Missing values are detected and counted per column. The user can drop incomplete
+rows or fill the gaps using the most common value for nominal attributes and the
+mean for numeric attributes, either globally or within each decision class. The
+completed table becomes a new dataset linked to its source.
+
+\item[FR-7 (Running experiments).]
+One or more strategies are applied to a dataset in a single experiment, with
+tie-breaking policies and a random seed configurable. For every strategy, the
+system records $\gamma$, $\alpha$, row counts, running time, and details of how
+conflicts were handled. The input dataset is never modified; each output is
+stored as a new dataset.
+
+\item[FR-8 (Decision tree comparison).]
+A decision tree (currently CART) can be built on demand for any dataset (original
+or resolved). The system reports depth, average leaf depth, and node count.
+Numeric markers (\texttt{n}, \texttt{i}, \texttt{r}) are encoded as numeric
+features, while categorical and logical markers (\texttt{c}, \texttt{l}) are
+one-hot encoded. A comparison view places previously built trees side by side.
+
+\item[FR-9 (Export).]
+Any resolved table can be downloaded as a CSV file and used in external tools.
+
+\end{description}
+
+Figure~\ref{fig:usecase} summarises these requirements. A single actor, the
+user, covers both anonymous work in a temporary session and work after
+registration or login (FR-1, FR-2). Guest data can be adopted into an account when
+the user registers or logs in.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/use_case.png}
+\captionof{figure}[Use case diagram]{Use case diagram of the system.\\{\footnotesize Source: Own work}}
+\label{fig:usecase}
+\end{center}
+
+Figure~\ref{fig:activity_workflow} shows a typical analytical path: choose or
+upload a dataset, optionally analyse it, complete missing values or introduce
+inconsistency when needed, run an experiment, inspect results, and export or
+reuse resolved tables.
+
+\begin{center}
+\includegraphics[width=0.85\textwidth]{figures/activity_workflow.png}
+\captionof{figure}[Main analytical workflow]{Main analytical workflow.\\{\footnotesize Source: Own work}}
+\label{fig:activity_workflow}
+\end{center}
+
+\subsection{Non-functional requirements}
+
+\begin{description}
+
+\item[NFR-1 (Reproducibility).]
+Every operation with a random component takes an explicit seed, and all
+experiment parameters are stored. Running the same operation on the same data
+with the same seed produces the same result.
+
+\item[NFR-2 (Correctness and testability).]
+The rough-set measures and all four resolution strategies are covered by unit
+tests and must reproduce the worked examples from Chapter~4 exactly.
+
+\item[NFR-3 (Portability and deployment).]
+The system runs from one codebase in two configurations: locally with an embedded
+database and as a containerised stack with a client--server database. Switching
+between them requires no code changes, and the complete stack starts with a
+single command.
+
+\item[NFR-4 (Extensibility).]
+Adding a resolution or introduction strategy requires one new module and one
+registry entry; existing strategies and API code do not need to change.
+
+\item[NFR-5 (Security).]
+Passwords are never stored or logged in plain text. Every operation on a private
+resource checks ownership. In production, only the web frontend is externally
+accessible.
+
+\item[NFR-6 (Interoperability).]
+Input and output use plain CSV files.
+
+\item[NFR-7 (Usability).]
+The main analytical functions work without an account, and results are displayed
+without full-page reloads.
+
+\item[NFR-8 (Responsiveness under load).]
+Long-running experiments, tree generation and attribute-importance calculations
+must not prevent the server from responding to other requests.
+
+\end{description}
+
+\section{System Architecture}
+
+The system follows a three-tier client--server architecture: a browser frontend,
+an application server, and a relational database. The frontend is a single-page
+application that communicates with the server through a JSON REST API. In
+production, only the frontend is publicly accessible; the API and database remain
+on an internal network.
+
+Internally, the application server is organised into three layers:
+\begin{itemize}
+\item \textbf{Presentation layer} (\texttt{api/}): HTTP endpoints, request parsing,
+validation, and response formatting.
+\item \textbf{Business layer} (\texttt{business/}): services, access rules,
+algorithms, and transaction logic. Algorithms are exposed through a registry and
+common interfaces, which makes adding new strategies straightforward (NFR-4).
+\item \textbf{Data access layer} (\texttt{db/}): database queries and file storage
+logic.
+\end{itemize}
+
+Figure~\ref{fig:arch_layers} shows how these layers sit between the browser and
+the stored data.
+
+\begin{center}
+\includegraphics[width=0.85\textwidth]{figures/component_architecture.png}
+\captionof{figure}[Layered architecture]{Layered architecture of the application.\\{\footnotesize Source: Own work}}
+\label{fig:arch_layers}
+\end{center}
+
+The independent \texttt{core/} module contains rough-set operations (equivalence
+classes, approximations, $\alpha$, $\gamma$) and missing-value detection. It does
+not depend on the web framework or the database, which makes it easy to test in
+isolation (NFR-2).
+
+Structured metadata is stored in PostgreSQL in production and in SQLite locally
+(NFR-3). Decision tables are stored as CSV files, while the database stores their
+metadata and file paths. Files are written before the database commit and removed
+if the transaction fails; the database record remains the source of truth.
+
+Heavy computations run in worker threads so that the server can continue handling
+requests while experiments or tree generation are running (NFR-8).
+
+\section{Data Model}
+
+The database schema is managed through Alembic migrations, which run automatically
+when the server starts. The same migrations are used for SQLite and PostgreSQL, so
+both configurations share the same structure.
+
+For readability, the schema is presented in five areas: users and ownership,
+dataset management, experiment configuration, experiment execution and results,
+and decision-tree generation. Reference tables are shown separately.
+
+\subsection{Users and ownership}
+
+Data may belong to a registered \texttt{user} or to an anonymous
+\texttt{guest\_session}, identified by a hashed cookie token with a limited
+lifetime. Datasets, experiments, and tree runs store either a \texttt{user\_id}
+or a \texttt{guest\_session\_id}. Built-in public datasets may have neither,
+while every experiment must have exactly one owner.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/users_logical.png}
+\captionof{figure}[Users and ownership --- logical model]{Users and ownership --- logical model.\\{\footnotesize Source: Own work}}
+\label{fig:log_users}
+\end{center}
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/users_relational.png}
+\captionof{figure}[Users and ownership --- relational model]{Users and ownership --- relational model.\\{\footnotesize Source: Own work}}
+\label{fig:erd_users}
+\end{center}
+
+\subsection{Dataset management}
+
+Each \texttt{dataset} stores basic metadata about a decision table: its name, CSV
+path, dimensions, the decision attribute, and cached values of $\gamma$ and
+$\alpha$. The dataset origin is stored in \texttt{dataset\_provenance} as an
+upload, a derived dataset, or an experiment output, with an optional reference to
+the source dataset. This makes every generated table a regular dataset that can be
+analysed again and reused.
+
+If the source dataset is deleted, derived datasets remain available; only their
+\texttt{source\_dataset\_id} is set to \textsc{null}.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/datasets_logical.png}
+\captionof{figure}[Dataset management --- logical model]{Dataset management --- logical model.\\{\footnotesize Source: Own work}}
+\label{fig:log_datasets}
+\end{center}
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/datasets_relational.png}
+\captionof{figure}[Dataset management --- relational model]{Dataset management --- relational model.\\{\footnotesize Source: Own work}}
+\label{fig:erd_datasets}
+\end{center}
+
+\subsection{Experiment configuration}
+
+An \texttt{experiment} stores the settings of a run: the input dataset, random
+seed, tie-breaking policies, and owner. It does not store measurements. Input
+metrics are taken from the dataset, while outcomes are stored with experiment
+results.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/experiment_config_logical.png}
+\captionof{figure}[Experiment configuration --- logical model]{Experiment configuration --- logical model.\\{\footnotesize Source: Own work}}
+\label{fig:log_expconfig}
+\end{center}
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/experiment_config_relational.png}
+\captionof{figure}[Experiment configuration --- relational model]{Experiment configuration --- relational model.\\{\footnotesize Source: Own work}}
+\label{fig:erd_expconfig}
+\end{center}
+
+\subsection{Experiment execution and results}
+
+Each strategy run creates one \texttt{experiment\_result} storing the strategy,
+its runtime, and a JSON \texttt{details} field describing how conflicts were
+handled. Numeric values (such as \texttt{gamma}, \texttt{alpha}, row counts, and
+strategy-specific measures) are stored in \texttt{experiment\_metrics} as
+name--value pairs. This design allows adding new metrics without schema changes.
+
+Each result may point to one output dataset through
+\texttt{output\_dataset\_id}. The link is optional: if the resolved CSV is deleted
+later, the metrics remain and the foreign key is cleared. Because outputs are
+ordinary datasets, a resolved table can go straight into another experiment or
+into tree building.
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{figures/experiment_results_logical.png}
+\captionof{figure}[Experiment execution and results --- logical model]{Experiment execution and results --- logical model.\\{\footnotesize Source: Own work}}
+\label{fig:log_expresults}
+\end{center}
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{figures/experiment_results_relational.png}
+\captionof{figure}[Experiment execution and results --- relational model]{Experiment execution and results --- relational model.\\{\footnotesize Source: Own work}}
+\label{fig:erd_expresults}
+\end{center}
+
+\subsection{Decision-tree generation}
+
+A \texttt{tree\_run} records that a decision tree was built for a given dataset
+with a chosen algorithm (currently CART). Structural measures such as depth and
+node count are stored in \texttt{tree\_metrics}. Because resolved experiment
+outputs are saved as datasets, comparing trees before and after resolution is
+simply comparing runs on different datasets.
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/trees_logical.png}
+\captionof{figure}[Decision-tree generation --- logical model]{Decision-tree generation --- logical model.\\{\footnotesize Source: Own work}}
+\label{fig:log_trees}
+\end{center}
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{figures/trees_relational.png}
+\captionof{figure}[Decision-tree generation --- relational model]{Decision-tree generation --- relational model.\\{\footnotesize Source: Own work}}
+\label{fig:erd_trees}
+\end{center}
+
+\subsection{Reference tables}
+
+Strategy, policy, and algorithm names are stored in lookup tables rather than as
+free text. This makes validation simpler and keeps the database consistent.
+Figure~\ref{fig:erd_reference} shows the reference tables: four resolution
+strategies, the two tie-policy lists, and the tree-algorithm list.
+
+\begin{center}
+\includegraphics[width=0.8\textwidth]{figures/reference_tables.png}
+\captionof{figure}[Reference tables]{Reference tables.\\{\footnotesize Source: Own work}}
+\label{fig:erd_reference}
+\end{center}
+
+\subsection{Integrity rules and deletion}
+
+Foreign keys and unique constraints keep the schema consistent. Each experiment
+can have at most one result per strategy, each result can have at most one metric
+with a given name, each result can point to at most one output dataset, and each
+owner can have at most one dataset with the same \texttt{storage\_path}. A small
+number of \texttt{CHECK} constraints enforce valid ownership types (registered
+user, guest, or built-in). Other rules, such as valid strategy and policy names,
+are enforced in the API.
+
+Deleting a dataset removes its CSV file and any trees built from it after the
+database transaction is committed. Derived datasets and experiment outputs remain,
+but their \texttt{source\_dataset\_id} is set to \textsc{null}. If the dataset was
+used as input for experiments, the API first displays affected experiments and
+deletes their records only after confirmation; resolved CSV outputs remain
+available as separate datasets.
+
+\subsection{Normal Forms}
+
+The schema satisfies the first three normal forms. Each table has a primary key,
+columns contain atomic values, and repeating data (metrics) is stored in child
+tables (1NF). Non-key attributes depend on the whole key (2NF). Lookup tables
+prevent transitive dependencies (3NF).
+
+Two deliberate exceptions remain. The JSON \texttt{details} field stores metadata
+that is naturally processed as a whole. The \texttt{dataset} table also caches
+measured metric values to avoid reading every CSV file when displaying dataset
+lists. Since dataset files are immutable, cached values remain consistent.
+
+\section{Used Technologies}
+\label{sec:tech}
+
+\section{User Interface}
+\label{sec:ui}

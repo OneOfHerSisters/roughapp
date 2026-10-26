@@ -1,0 +1,41 @@
+@startuml activity-auth
+|Użytkownik|
+start
+
+if (Ma konto?) then (nie — rejestracja)
+  :Podaj e-mail i hasło\n(min. 8 znaków);
+  |Backend|
+  if (E-mail już istnieje?) then (tak)
+    :Zwróć HTTP 409;
+    |Użytkownik|
+    :Wyświetl błąd;
+    stop
+  else (nie)
+    :Zahashuj hasło (bcrypt);
+    :Zapisz użytkownika w PostgreSQL;
+  endif
+else (tak — logowanie)
+  :Podaj e-mail i hasło;
+  |Backend|
+  if (Dane poprawne?) then (tak)
+  else (nie)
+    :Zwróć HTTP 401;
+    |Użytkownik|
+    :Wyświetl błąd;
+    stop
+  endif
+endif
+
+|Backend|
+:Wygeneruj token JWT\n(sub = user_id, exp);
+:Zwróć access_token;
+
+|Frontend|
+:Zapisz token w pamięci;
+:Dołącz nagłówek Authorization:\nBearer {token};
+
+|Użytkownik|
+:Korzysta z funkcji\nwymagających logowania;
+stop
+
+@enduml

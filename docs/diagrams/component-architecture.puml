@@ -1,0 +1,34 @@
+@startuml component-architecture
+skinparam componentStyle rectangle
+
+package "Presentation" {
+  [React SPA\n(TypeScript, Vite)] as FE
+  [Nginx] as NG
+}
+
+package "Application server" {
+  [FastAPI\n(Uvicorn)] as API
+
+  package "Layers" {
+    [api/] as R
+    [business/] as S
+    [core/] as C
+    [db/] as D
+  }
+}
+
+package "Data" {
+  database "PostgreSQL / SQLite" as PG
+  folder "File system\n(CSV)" as FS
+}
+
+FE --> NG : HTTP
+NG --> API : /api/* proxy
+API --> R
+R --> S
+S --> C
+S --> D
+D --> PG
+S --> FS
+
+@enduml
