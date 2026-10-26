@@ -9,8 +9,14 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Data
-data/
+# Data: the seed decision tables are tracked so that a clean checkout can run
+# the tests and build an image that seeds itself; runtime artefacts are not.
+data/roughapp.db
+data/uploads/
+data/tree_artifacts/
+data/experiment_results/
+data/batch_results/
+data/experiment_results_batch.csv
 
 # Secrets / local env (keep .env.example tracked)
 .env

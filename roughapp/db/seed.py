@@ -19,11 +19,6 @@ BUILTIN_DATASETS = [
 ]
 
 
-def _azad_dataset_paths() -> list[tuple[str, str]]:
-    azad_dir = Path("data/azad")
-    if not azad_dir.is_dir():
-        return []
-    return [(p.stem, str(p)) for p in sorted(azad_dir.glob("*.csv"))]
 
 
 def _add_dataset(db: Session, name: str, path: str) -> None:
@@ -61,6 +56,6 @@ def _add_dataset(db: Session, name: str, path: str) -> None:
 
 
 def seed_builtin_datasets(db: Session) -> None:
-    for name, path in BUILTIN_DATASETS + _azad_dataset_paths():
+    for name, path in BUILTIN_DATASETS:
         _add_dataset(db, name, path)
     db.commit()
