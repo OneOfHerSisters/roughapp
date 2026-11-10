@@ -31,3 +31,4 @@ frontend_legacy.html
 jdbc/
 /schema*.sql
 /analysis.md
+gha-key.json
