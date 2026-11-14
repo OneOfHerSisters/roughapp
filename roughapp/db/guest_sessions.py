@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from roughapp.db.models import Dataset, Experiment, GuestSession, ensure_utc, utcnow
+from roughapp.db.models import Dataset, Experiment, GuestSession, TreeRun, ensure_utc, utcnow
 from roughapp.db.repositories import DatasetRepository, apply_dataset_deletion_plan
 from roughapp.db.storage import FileStorage, LocalFileStorage
 
@@ -18,6 +18,9 @@ def delete_guest_session_data(
     storage = storage or LocalFileStorage()
     repo = DatasetRepository(db)
     plans = [repo.deletion_plan(ds.id) for ds in db.query(Dataset).filter_by(guest_session_id=guest_session.id).all()]
+
+    for run in db.query(TreeRun).filter_by(guest_session_id=guest_session.id).all():
+        db.delete(run)
 
     for exp in db.query(Experiment).filter_by(guest_session_id=guest_session.id).all():
         db.delete(exp)
