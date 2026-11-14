@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from roughapp.config import get_settings
 from roughapp.db.engine import get_db
 from roughapp.db.guest_sessions import cleanup_expired_guest_sessions
-from roughapp.db.models import Dataset, Experiment, GuestSession, User, ensure_utc, utcnow
+from roughapp.db.models import Dataset, Experiment, GuestSession, TreeRun, User, ensure_utc, utcnow
 
 settings = get_settings()
 
@@ -125,6 +125,10 @@ def adopt_guest_session(db: Session, guest_session: GuestSession, user: User) ->
     )
     db.query(Experiment).filter(Experiment.guest_session_id == guest_session.id).update(
         {Experiment.user_id: user.id, Experiment.guest_session_id: None},
+        synchronize_session=False,
+    )
+    db.query(TreeRun).filter(TreeRun.guest_session_id == guest_session.id).update(
+        {TreeRun.user_id: user.id, TreeRun.guest_session_id: None},
         synchronize_session=False,
     )
     db.delete(guest_session)
