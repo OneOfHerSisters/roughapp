@@ -1,8 +1,3 @@
-export default function RegisterPage() {
-  return null
-}
-
-/*
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Container, Paper, Title, TextInput, PasswordInput, Button, Text, Anchor, Stack } from '@mantine/core'
@@ -62,4 +57,3 @@ export default function RegisterPage() {
     </Container>
   )
 }
-*/
