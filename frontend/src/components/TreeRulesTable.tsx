@@ -1,4 +1,4 @@
-import { Box, Table, Text, Badge } from '@mantine/core'
+import { Box, Table, Text } from '@mantine/core'
 import type { DecisionRule } from '../api/client'
 
 export default function TreeRulesTable({ rules }: { rules: DecisionRule[] }) {
