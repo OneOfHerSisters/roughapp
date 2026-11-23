@@ -61,3 +61,12 @@ def get_tree_text(
     services: ServiceContainer = Depends(get_services),
 ):
     return services.trees.get_tree_text(actor, tree_run_id)
+
+
+@router.get("/{tree_run_id}/rules")
+def get_tree_rules(
+    tree_run_id: int,
+    actor: ActorContext = Depends(get_actor_context),
+    services: ServiceContainer = Depends(get_services),
+):
+    return services.trees.get_tree_rules(actor, tree_run_id)

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from roughapp.business.algorithms import tree_builder_registry
+from roughapp.business.algorithms.rules import TreePathRuleExtractor
 from roughapp.business.algorithms.base import TreeBuilder, TreeBuildResult
 from roughapp.business.dataset_provenance import origin_from_dataset, provenance_parent_map
 from roughapp.business.models.decision_table import DecisionTable
@@ -408,6 +409,31 @@ class TreeService:
         except OSError as e:
             raise ResultNotFoundError("Tree file is missing on disk") from e
         return {"tree_run_id": run.id, "text": text}
+
+    def get_tree_rules(self, actor: ActorContext, tree_run_id: int) -> dict:
+        run = self._tree_runs.get(tree_run_id)
+        if run is None or not run.artifact_path:
+            raise ResultNotFoundError("Saved tree not found")
+        self._assert_run_access(actor, run)
+        ds = self._datasets.get_visible(actor, run.dataset_id)
+        table = self._datasets.load_table(ds)
+        tree = self._builder.build_tree(table)
+        ruleset = TreePathRuleExtractor().extract(tree)
+        return {
+            "tree_run_id": run.id,
+            "rules": [
+                {
+                    "conditions": [
+                        {"attribute": c.attribute, "value": c.value}
+                        for c in rule.conditions
+                    ],
+                    "conclusion": rule.conclusion,
+                    "support": rule.support,
+                    "confidence": rule.confidence,
+                }
+                for rule in ruleset.rules
+            ],
+        }
 
     def delete_tree_run(self, actor: ActorContext, tree_run_id: int) -> None:
         run = self._tree_runs.get(tree_run_id)

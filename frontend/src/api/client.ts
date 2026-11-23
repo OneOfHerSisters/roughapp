@@ -182,6 +182,25 @@ export async function fetchTreeText(treeRunId: number) {
   return data
 }
 
+export interface RuleCondition {
+  attribute: string
+  value: string
+}
+
+export interface DecisionRule {
+  conditions: RuleCondition[]
+  conclusion: string
+  support: number
+  confidence: number
+}
+
+export async function fetchTreeRules(treeRunId: number) {
+  const { data } = await api.get<{ tree_run_id: number; rules: DecisionRule[] }>(
+    `/trees/${treeRunId}/rules`,
+  )
+  return data
+}
+
 export async function buildDatasetTreePersist(datasetId: number) {
   const { data } = await api.post<{
     tree_run_id: number

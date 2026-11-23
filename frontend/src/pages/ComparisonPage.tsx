@@ -9,12 +9,13 @@ import {
   deleteTreeRun,
   fetchTreeAlgorithms,
   fetchTreeSources,
-  fetchTreeText,
+  fetchTreeRules,
+  type DecisionRule,
   type TreeOrigin,
   type TreeSourceRow,
 } from '../api/client'
 import { useAuth } from '../auth'
-import TreeTextPanel from '../components/TreeTextPanel'
+import TreeRulesTable from '../components/TreeRulesTable'
 
 interface TreeRunRow {
   tree_run_id: number
@@ -133,7 +134,7 @@ export default function ComparisonPage() {
   const [pendingBuild, setPendingBuild] = useState<string | null>(null)
   const [pendingAlgorithm, setPendingAlgorithm] = useState('id3')
   const [expanded, setExpanded] = useState<number | null>(null)
-  const [treeTexts, setTreeTexts] = useState<Record<number, string>>({})
+  const [treeRules, setTreeRules] = useState<Record<number, DecisionRule[]>>({})
   const [loadingText, setLoadingText] = useState<number | null>(null)
   const [building, setBuilding] = useState<string | null>(null)
   const [buildError, setBuildError] = useState('')
@@ -234,26 +235,26 @@ export default function ComparisonPage() {
     nodes: Math.min(...compareRuns.map(r => r.nodes ?? Infinity)),
   }
 
-  async function loadTreeText(treeRunId: number) {
-    if (treeTexts[treeRunId]) return
+  async function loadTreeRules(treeRunId: number) {
+    if (treeRules[treeRunId]) return
     setLoadingText(treeRunId)
     try {
-      const data = await fetchTreeText(treeRunId)
-      setTreeTexts(t => ({ ...t, [treeRunId]: data.text }))
+      const data = await fetchTreeRules(treeRunId)
+      setTreeRules(t => ({ ...t, [treeRunId]: data.rules }))
     } catch {
-      setTreeTexts(t => ({ ...t, [treeRunId]: 'Could not load tree text.' }))
+      setTreeRules(t => ({ ...t, [treeRunId]: [] }))
     } finally {
       setLoadingText(null)
     }
   }
 
-  async function toggleTreeText(treeRunId: number) {
+  async function toggleTreeRules(treeRunId: number) {
     if (expanded === treeRunId) {
       setExpanded(null)
       return
     }
     setExpanded(treeRunId)
-    await loadTreeText(treeRunId)
+    await loadTreeRules(treeRunId)
   }
 
   async function buildSource(source: TreeSourceRow, algorithm: string) {
@@ -294,6 +295,7 @@ export default function ComparisonPage() {
     try {
       await deleteTreeRun(treeRunId)
       if (expanded === treeRunId) setExpanded(null)
+      setTreeRules(t => { const n = { ...t }; delete n[treeRunId]; return n })
       await Promise.all([loadSources(), loadRuns()])
     } catch {
       setCompareError('Could not delete the tree.')
@@ -397,9 +399,9 @@ export default function ComparisonPage() {
                           size="compact-xs"
                           variant="subtle"
                           loading={loadingText === r.tree_run_id}
-                          onClick={() => void toggleTreeText(r.tree_run_id)}
+                          onClick={() => void toggleTreeRules(r.tree_run_id)}
                         >
-                          {expanded === r.tree_run_id ? 'Hide' : 'Text'}
+                          {expanded === r.tree_run_id ? 'Hide' : 'Rules'}
                         </Button>
                       </Table.Td>
                       <Table.Td>
@@ -414,10 +416,10 @@ export default function ComparisonPage() {
                         </Button>
                       </Table.Td>
                     </Table.Tr>
-                    {expanded === r.tree_run_id && treeTexts[r.tree_run_id] && (
+                    {expanded === r.tree_run_id && treeRules[r.tree_run_id] && (
                       <Table.Tr>
                         <Table.Td colSpan={9} bg="gray.0" p="sm">
-                          <TreeTextPanel text={treeTexts[r.tree_run_id]} />
+                          <TreeRulesTable rules={treeRules[r.tree_run_id]} />
                         </Table.Td>
                       </Table.Tr>
                     )}
