@@ -33,9 +33,7 @@ export default function TreeRulesTable({ rules }: { rules: DecisionRule[] }) {
                   ))
                 }
               </Table.Td>
-              <Table.Td>
-                <Badge variant="light" color="teal" size="sm">{rule.conclusion}</Badge>
-              </Table.Td>
+              <Table.Td>{rule.conclusion}</Table.Td>
               <Table.Td ta="right">{rule.support}</Table.Td>
               <Table.Td ta="right">{(rule.confidence * 100).toFixed(1)}%</Table.Td>
             </Table.Tr>
