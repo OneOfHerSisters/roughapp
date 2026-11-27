@@ -57,6 +57,8 @@ jobs:
     name: Docker images
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    # On main the deploy job builds the images itself; this check is for PRs only.
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
@@ -66,8 +68,8 @@ jobs:
   deploy:
     name: Deploy to GCP
     runs-on: ubuntu-latest
-    needs: [images]
-    if: github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write
